@@ -1,0 +1,172 @@
+openapi: "3.1.0"
+info:
+  title: CIS Detection Service
+  version: "1.0.0"
+  description: Contact Integrity System - Detection & Analysis API
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Service health check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /analyze:
+    post:
+      operationId: analyzeMessage
+      summary: Analyze a chat message for contact information
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AnalyzeRequest"
+      responses:
+        "200":
+          description: Analysis result
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/AnalyzeResponse"
+        "422":
+          description: Validation error
+
+  /analyze/batch:
+    post:
+      operationId: analyzeMessageBatch
+      summary: Analyze multiple messages in batch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [messages]
+              properties:
+                messages:
+                  type: array
+                  items:
+                    $ref: "#/components/schemas/AnalyzeRequest"
+                  maxItems: 50
+      responses:
+        "200":
+          description: Batch analysis results
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  results:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/AnalyzeResponse"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, service, version]
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        service:
+          type: string
+        version:
+          type: string
+        uptime_seconds:
+          type: number
+
+    AnalyzeRequest:
+      type: object
+      required: [message_id, thread_id, user_id, content]
+      properties:
+        message_id:
+          type: string
+        thread_id:
+          type: string
+        user_id:
+          type: string
+        content:
+          type: string
+          maxLength: 10000
+        context_messages:
+          type: array
+          items:
+            type: object
+            properties:
+              content:
+                type: string
+              user_id:
+                type: string
+              timestamp:
+                type: string
+                format: date-time
+        gps_lat:
+          type: number
+        gps_lon:
+          type: number
+        stages:
+          type: array
+          items:
+            type: integer
+            enum: [1, 2, 3]
+          description: "Which stages to run (default: all)"
+
+    AnalyzeResponse:
+      type: object
+      required: [detection_id, message_id, risk_score, labels, evidence_spans, stage, ruleset_version, processing_ms]
+      properties:
+        detection_id:
+          type: string
+          format: uuid
+        message_id:
+          type: string
+        risk_score:
+          type: number
+          minimum: 0
+          maximum: 1
+        labels:
+          type: array
+          items:
+            type: string
+        evidence_spans:
+          type: array
+          items:
+            $ref: "#/components/schemas/EvidenceSpan"
+        hashed_tokens:
+          type: array
+          items:
+            type: string
+        stage:
+          type: integer
+          description: Highest stage that contributed to the score
+        ruleset_version:
+          type: string
+        model_version:
+          type: string
+          nullable: true
+        processing_ms:
+          type: integer
+
+    EvidenceSpan:
+      type: object
+      required: [offset, length, type]
+      properties:
+        offset:
+          type: integer
+        length:
+          type: integer
+        type:
+          type: string
+          enum: [phone, email, url, social, intent, obfuscation]
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1

@@ -1,0 +1,134 @@
+version: "3.9"
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-cis}
+      POSTGRES_USER: ${POSTGRES_USER:-cis_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-changeme_in_production}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/migrations:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-cis_user} -d ${POSTGRES_DB:-cis}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  detection:
+    build:
+      context: ./services/detection
+      dockerfile: Dockerfile
+    ports:
+      - "8001:8001"
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-cis}
+      - POSTGRES_USER=${POSTGRES_USER:-cis_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme_in_production}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DETECTION_PORT=8001
+      - DETECTION_LOG_LEVEL=${DETECTION_LOG_LEVEL:-info}
+      - DETECTION_RULESET_VERSION=${DETECTION_RULESET_VERSION:-1.0.0}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  policy:
+    build:
+      context: ./services/policy
+      dockerfile: Dockerfile
+    ports:
+      - "8002:8002"
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-cis}
+      - POSTGRES_USER=${POSTGRES_USER:-cis_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme_in_production}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DETECTION_HOST=detection
+      - DETECTION_PORT=8001
+      - POLICY_PORT=8002
+      - POLICY_LOG_LEVEL=${POLICY_LOG_LEVEL:-info}
+      - POLICY_STRIKE_WINDOW_DAYS=${POLICY_STRIKE_WINDOW_DAYS:-30}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      detection:
+        condition: service_started
+
+  review:
+    build:
+      context: ./services/review
+      dockerfile: Dockerfile
+    ports:
+      - "8003:8003"
+    environment:
+      - POSTGRES_HOST=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${POSTGRES_DB:-cis}
+      - POSTGRES_USER=${POSTGRES_USER:-cis_user}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD:-changeme_in_production}
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - REVIEW_PORT=8003
+      - REVIEW_LOG_LEVEL=${REVIEW_LOG_LEVEL:-info}
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  interceptor:
+    build:
+      context: ./services/interceptor
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - DETECTION_HOST=detection
+      - DETECTION_PORT=8001
+      - INTERCEPTOR_PORT=8000
+      - INTERCEPTOR_SYNC_THRESHOLD=${INTERCEPTOR_SYNC_THRESHOLD:-0.65}
+      - INTERCEPTOR_LOG_LEVEL=${INTERCEPTOR_LOG_LEVEL:-info}
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  dashboard:
+    build:
+      context: ./services/dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - VITE_REVIEW_API_URL=http://review:8003
+      - VITE_POLICY_API_URL=http://policy:8002
+      - VITE_DETECTION_API_URL=http://detection:8001
+    depends_on:
+      - review
+      - policy
+
+volumes:
+  postgres_data:

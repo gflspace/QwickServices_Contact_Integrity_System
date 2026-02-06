@@ -1,0 +1,217 @@
+openapi: "3.1.0"
+info:
+  title: CIS Policy & Enforcement Service
+  version: "1.0.0"
+  description: Contact Integrity System - Policy Engine API
+
+paths:
+  /health:
+    get:
+      operationId: healthCheck
+      summary: Service health check
+      responses:
+        "200":
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /enforce:
+    post:
+      operationId: enforcePolicy
+      summary: Evaluate detection result and issue enforcement action
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/EnforceRequest"
+      responses:
+        "200":
+          description: Enforcement decision
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/EnforceResponse"
+
+  /strikes/{user_id}:
+    get:
+      operationId: getUserStrikes
+      summary: Get active strikes for a user
+      parameters:
+        - name: user_id
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: active_only
+          in: query
+          schema:
+            type: boolean
+            default: true
+      responses:
+        "200":
+          description: User strike records
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StrikeListResponse"
+
+  /thresholds:
+    get:
+      operationId: getThresholds
+      summary: Get current risk thresholds
+      responses:
+        "200":
+          description: Current thresholds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThresholdConfig"
+    put:
+      operationId: updateThresholds
+      summary: Update risk thresholds (ops/admin only)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ThresholdUpdate"
+      responses:
+        "200":
+          description: Updated thresholds
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ThresholdConfig"
+
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, service, version]
+      properties:
+        status:
+          type: string
+          enum: [healthy, degraded, unhealthy]
+        service:
+          type: string
+        version:
+          type: string
+
+    EnforceRequest:
+      type: object
+      required: [detection_id, user_id, risk_score, labels]
+      properties:
+        detection_id:
+          type: string
+          format: uuid
+        user_id:
+          type: string
+        thread_id:
+          type: string
+        risk_score:
+          type: number
+          minimum: 0
+          maximum: 1
+        labels:
+          type: array
+          items:
+            type: string
+
+    EnforceResponse:
+      type: object
+      required: [action, risk_band, strike_count]
+      properties:
+        action:
+          type: string
+          enum: [allow, nudge, soft_block, hard_block, warning, cooldown, restriction, suspension_candidate]
+        risk_band:
+          type: string
+          enum: [low, medium, high, critical]
+        strike_count:
+          type: integer
+        strike_id:
+          type: string
+          format: uuid
+          nullable: true
+        case_id:
+          type: string
+          format: uuid
+          nullable: true
+        enforcement_details:
+          type: object
+          properties:
+            duration_hours:
+              type: integer
+              nullable: true
+            message:
+              type: string
+            scope:
+              type: string
+              enum: [message, thread, account]
+
+    StrikeListResponse:
+      type: object
+      required: [user_id, strikes, total_active]
+      properties:
+        user_id:
+          type: string
+        strikes:
+          type: array
+          items:
+            $ref: "#/components/schemas/Strike"
+        total_active:
+          type: integer
+
+    Strike:
+      type: object
+      required: [id, strike_number, action_taken, is_active, window_start, window_end]
+      properties:
+        id:
+          type: string
+          format: uuid
+        strike_number:
+          type: integer
+        action_taken:
+          type: string
+        is_active:
+          type: boolean
+        window_start:
+          type: string
+          format: date-time
+        window_end:
+          type: string
+          format: date-time
+        case_id:
+          type: string
+          format: uuid
+          nullable: true
+
+    ThresholdConfig:
+      type: object
+      properties:
+        allow_max:
+          type: number
+        nudge_min:
+          type: number
+        nudge_max:
+          type: number
+        soft_block_min:
+          type: number
+        soft_block_max:
+          type: number
+        hard_block_min:
+          type: number
+
+    ThresholdUpdate:
+      type: object
+      required: [thresholds, changed_by, reason]
+      properties:
+        thresholds:
+          $ref: "#/components/schemas/ThresholdConfig"
+        changed_by:
+          type: string
+        reason:
+          type: string
