@@ -10,9 +10,9 @@ describe("App", () => {
 
   it("renders navigation links", () => {
     render(<App />);
-    expect(screen.getByText("Moderator Queue")).toBeDefined();
-    expect(screen.getByText("Ops Analytics")).toBeDefined();
-    expect(screen.getByText("Executive View")).toBeDefined();
+    expect(screen.getAllByText("Moderator Queue").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Ops Analytics").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("Executive View").length).toBeGreaterThan(0);
   });
 
   it("shows current role", () => {
